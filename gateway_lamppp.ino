@@ -18,8 +18,16 @@ unsigned long tl;
 uint32_t newNodes;
 bool flag = 0;
 
+float vsolar;
+float vbat;
+
 Scheduler userScheduler;
 painlessMesh mesh;
+
+const int MAX_NODES_DIR = 1;
+uint32_t nodeDir[MAX_NODES_DIR] = {};
+int jumlahNodeDir = 0;
+
 
 void ledSetup() {
   uint8_t msg = 1;
@@ -28,6 +36,20 @@ void ledSetup() {
   serializeJson(controlLedDoc, jsonLedOn);
   Serial2.println(jsonLedOn);
 }
+
+// void updateLamp() {
+//   if (vsolar >= 4.00) {
+//     uint8_t on = 1;
+//     controlLedDoc["LAMP"] = on;
+//     String jsonLedOn;
+//     Serial2.println(jsonLedOn);
+//   } else {
+//     uint8_t off = 0;
+//     controlLedDoc["LAMP"] = off;
+//     String jsonLedOff;
+//     Serial2.println(jsonLedOff);
+//   }
+// }
 
 //function for receive data from microcontroller and send data via mesh
 void receiveSerial2() {
@@ -38,22 +60,15 @@ void receiveSerial2() {
     if (buffValue[x - 1] == '\n') {
       DeserializationError error = deserializeJson(doc, buffValue);
       if (!error) {
-        float vsolar = doc["VSOLAR"];
-        float vbat = doc["VBAT"];
+        vsolar = doc["VSOLAR"];
+        vbat = doc["VBAT"];
 
-        // // Cetak status lampu
-        // if (controlLedDoc["LAMP"] = 1) {
-        //   Serial.println(" LAMP: ON");
-        // } else {
-        //   Serial.println(" LAMP: OFF");
-        // }
-
-        ledSetup();
+        //updateLamp();
         nodeNumber = 0;
 
         newDoc["Node"] = nodeNumber;
         newDoc["VSOLAR"] = round(vsolar * 100.0) / 100.0;
-        newDoc["VBAT"] = round(vbat * 100.0) / 100.0;  // Round vbat to two decimal places
+        newDoc["VBAT"] = round(vbat * 100.0) / 100.0;
         newDoc["LAMP"] = (controlLedDoc["LAMP"] == 1) ? "ON" : "OFF";
 
         String jsonString;
@@ -74,6 +89,23 @@ void sendMessage() {
   //Serial.println(msg);
 }
 
+void addNodeConnection() {
+  if (jumlahNodeDir < MAX_NODES_DIR) {
+    nodeDir[jumlahNodeDir++] = newNodes;
+    Serial.printf("Jumlah Node Direct: %d\tNode direct:%d\n", jumlahNodeDir, nodeDir[MAX_NODES_DIR - 1]);
+  } else {
+    Serial.println("Jumlah node direct penuh.");
+  }
+}
+
+void lostConnect() {
+  if (!mesh.isConnected(nodeDir[MAX_NODES_DIR - 1])) {
+    Serial.println("Node Direct disconnected.");
+    jumlahNodeDir = 0;
+    Serial.printf("Jumlah Node Direct: %d\n", jumlahNodeDir);
+  }
+}
+
 void receivedCallback(uint32_t from, String& msg) {
   uint32_t nodeId = mesh.getNodeId();
   Serial.printf("received from %u msg=%s\n", from, msg.c_str());
@@ -82,10 +114,12 @@ void receivedCallback(uint32_t from, String& msg) {
 void newConnectionCallback(uint32_t nodeId) {
   Serial.printf("New Connection, nodeId = %u\n", nodeId);
   newNodes = nodeId;
+  addNodeConnection();
 }
 
 void changedConnectionCallback() {
   Serial.printf("Changed connections\n");
+  lostConnect();
 }
 
 void nodeTimeAdjustedCallback(int32_t offset) {
@@ -97,6 +131,8 @@ void setup() {
 
   Serial.begin(9600);
   Serial2.begin(9600, SERIAL_8N1, 16, 17);
+
+  ledSetup();
 
   mesh.setDebugMsgTypes(ERROR | STARTUP);
   mesh.init(MESH_PREFIX, MESH_PASSWORD);
